@@ -1,7 +1,7 @@
-/** 从清华镜像获取固定版本的 uv wheel，并用 Node 提取独立可执行文件。 */
+/** 从清华镜像获取固定版本的 uv wheel，并提取独立可执行文件。 */
 import { chmodSync, mkdtempSync, renameSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-
+import { extractZip } from '../shared/zip-extract.ts';
 // 摘要固定来自 https://pypi.org/pypi/uv/0.9.26/json，不能在下载时信任镜像返回的摘要。
 const WHEELS: Record<string, readonly [string, string]> = {
   'linux-x64': [
@@ -29,7 +29,6 @@ const WHEELS: Record<string, readonly [string, string]> = {
     '344ff38749b6cd7b7dfdfb382536f168cafe917ae3a5aa78b7a63746ba2a905b',
   ],
 };
-
 /** 返回受支持平台的固定下载地址与摘要；不请求在线索引或解析最新版本。 */
 export function uvWheelArtifact(platform: string) {
   const artifact = WHEELS[platform];
@@ -37,13 +36,11 @@ export function uvWheelArtifact(platform: string) {
   const [path, digest] = artifact;
   return { url: `https://mirrors.tuna.tsinghua.edu.cn/pypi/web/${path}`, name: path.split('/').pop()!, digest };
 }
-
 /** 解包已通过摘要校验的 wheel；完整提取后才替换目标文件，失败时清理临时目录。 */
 export async function extractUvWheel(archive: string, bin: string, executable: string): Promise<void> {
   const directory = mkdtempSync(join(resolve(bin), '.wheel-'));
   try {
-    const { default: extract } = await import('@electron-internal/extract-zip');
-    await extract(archive, { dir: directory });
+    await extractZip(archive, directory);
     const source = join(directory, 'uv-0.9.26.data', 'scripts', executable);
     chmodSync(source, 0o700);
     renameSync(source, join(bin, executable));

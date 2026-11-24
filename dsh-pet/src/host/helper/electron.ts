@@ -12,6 +12,7 @@ import { dirname, join, resolve } from 'node:path';
 import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { type LoggerLike } from '../log-file.ts';
 import { PACKAGE_ROOT } from '../paths.ts';
+import { extractZip } from '../../shared/zip-extract.ts';
 import type { HelperOptions } from './child.ts';
 
 /** Package root: shares the same anchor point with other host modules (see ../paths.ts ), and cannot be counted as a separate copy of this file directory. */
@@ -272,14 +273,9 @@ export async function ensureElectronDownload(options: EnsureElectronOptions = {}
       });
       const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
       info(`download complete (${seconds}s), extracting to ${targetDir} ...`, `下载完成（${seconds}s），正在解压`);
-      // Use the official extract-zip for decompression (the same model as the official electron 43 installation): pure
-      // Node + native binding, consistent across platforms, correctly handle symlink and file permissions, and do not
-      // require system unzip/tar/powershell. Must be dynamic import: This package is the N-API native module. The
-      // precompiled product does not have Android target. The static import will be throw during the module evaluation
-      // period, so that users who only want to use Web mode will fail to activate the entire entry; after on-demand
-      // loading, failure will only fall into this function. catch.
-      const { default: extract } = await import('@electron-internal/extract-zip');
-      await extract(zipPath, { dir: targetDir });
+      // 优先用系统 tar（Windows 自带的 bsdtar 可直接读 ZIP），不可用时回退原生解包器：原生模块在 Windows 上用
+      // MSVC 编译，加载它需要 Visual C++ 运行库，而该运行库不随 Windows 分发，干净系统上会直接失败。
+      await extractZip(zipPath, targetDir);
       if (!isNonEmptyFile(exe)) {
         throw new Error(`Electron zip extracted, but ${ELECTRON_REL} is missing, empty or not a regular file`);
       }
